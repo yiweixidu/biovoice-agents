@@ -13,6 +13,8 @@ import asyncio
 import json
 
 import click
+from dotenv import load_dotenv
+load_dotenv()  # load .env before settings are instantiated
 
 from biovoice.agents.registry import AgentRegistry
 from biovoice.config.settings import BioVoiceSettings

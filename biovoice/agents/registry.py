@@ -78,11 +78,21 @@ class AgentRegistry:
             "pdb":     {"enabled": false},
           }
         """
+        _known = {"name", "enabled", "api_key", "prompt_template", "extra_params"}
         instances = []
         for name, raw in agents_config.items():
             if not raw.get("enabled", True):
                 continue
-            cfg = AgentConfig(name=name, **raw)
+            # Split known AgentConfig fields from agent-specific extras.
+            # Pydantic v2 silently drops unknown fields, so we must do this
+            # explicitly to preserve email, delay, etc. in extra_params.
+            known   = {k: v for k, v in raw.items() if k in _known}
+            extras  = {k: v for k, v in raw.items() if k not in _known}
+            if extras:
+                # Merge caller-provided extra_params with the unpacked extras
+                merged_extras = {**extras, **known.pop("extra_params", {})}
+                known["extra_params"] = merged_extras
+            cfg = AgentConfig(name=name, **known)
             try:
                 instances.append(cls.get(name, cfg))
             except KeyError:

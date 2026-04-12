@@ -52,6 +52,9 @@ def build_model_client(cfg: Dict) -> ModelClient:
         "temperature": 0.1,
       }
     """
+    from biovoice.models.openai_client import OpenAIClient
+    from biovoice.models.ollama_client import OllamaClient
+
     llm_type = cfg.get("llm_type", "openai")
     if llm_type == "openai":
         return OpenAIClient(
