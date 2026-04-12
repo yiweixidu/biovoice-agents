@@ -1,0 +1,72 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "biovoice-agents"
+version = "0.1.0"
+description = "Multi-agent framework for biomedical literature and data analysis"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+
+dependencies = [
+    "biopython",
+    "langchain",
+    "langchain-openai",
+    "langchain-community",
+    "langchain-text-splitters",
+    "langchain-huggingface",
+    "chromadb",
+    "openai",
+    "pydantic>=2.0",
+    "pydantic-settings",
+    "python-dotenv",
+    "requests",
+    "pdfplumber>=0.10.0",
+    "python-pptx",
+    "edge-tts",
+    "moviepy==1.0.3",
+    "pdf2image",
+    "gradio",
+    "fastapi",
+    "uvicorn",
+    "click",
+    "pandas",
+    "matplotlib",
+    "seaborn",
+    "python-docx>=1.1",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.23",
+]
+
+[project.scripts]
+biovoice = "biovoice.cli.main:cli"
+
+[project.entry-points."biovoice.agents"]
+pubmed          = "biovoice.agents.pubmed_agent:PubMedAgent"
+europe_pmc      = "biovoice.agents.europe_pmc_agent:EuropePMCAgent"
+pdb             = "biovoice.agents.pdb_agent:PDBAgent"
+uniprot         = "biovoice.agents.uniprot_agent:UniProtAgent"
+clinicaltrials  = "biovoice.agents.clinicaltrials_agent:ClinicalTrialsAgent"
+chembl          = "biovoice.agents.chembl_agent:ChEMBLAgent"
+local_data      = "biovoice.agents.local_data_agent:LocalDataAgent"
+
+# ── Package discovery ─────────────────────────────────────────────────────────
+# Both the new biovoice.* tree and the inherited core.* / domain.* / app.*
+# trees live directly under the project root, so setuptools finds them all
+# with where=["."].
+[tool.setuptools.packages.find]
+where   = ["."]
+include = ["biovoice*", "core*", "domain*", "app*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "strict"
+markers = [
+    "integration: marks tests that require real API access (skip with -m 'not integration')",
+    "eval: marks tests that require live LLM calls for synthesis quality evaluation",
+]
