@@ -23,6 +23,8 @@ from core.rag.vector_store import FluBroadRAG
 from core.narrative.generator import NarrativeGenerator
 from core.retrieval.pdf_processor import PDFProcessor
 from core.retrieval.pmc_fulltext import UnpaywallFetcher
+from biovoice.qa.engine import QAEngine
+from biovoice.models.base import build_model_client
 
 load_dotenv()
 
@@ -154,40 +156,35 @@ def fetch_literature(query: str, max_papers: int, fulltext: bool):
 
 
 # ── Tab 3: RAG Q&A ────────────────────────────────────────────────────────────
-rag = FluBroadRAG(
+_qa_rag = FluBroadRAG(
     collection_name="flu_bnabs_full",
     persist_directory="./data/vector_db",
 )
 try:
-    rag.load()
+    _qa_rag.load()
 except Exception:
     pass  # will be built on first generate
 
-llm = NarrativeGenerator(
-    model=config["llm_model"],
-    temperature=config["llm_temperature"],
-    llm_type=config["llm_type"],
-)
+_qa_model = build_model_client(config)
+_qa_engine = QAEngine(rag=_qa_rag, model=_qa_model, k=5)
 
-def answer_question(question, history):
-    docs = rag.similarity_search(question, k=4)
-    context = "\n\n".join(d.page_content for d in docs)
-    messages = [
-        SystemMessage(content="You are a helpful virology research assistant."),
-        HumanMessage(
-            content=(
-                f"Context:\n{context}\n\n"
-                f"Question: {question}\n\nAnswer:"
-            )
-        ),
-    ]
-    response = llm.llm.invoke(messages)
-    answer = response.content if hasattr(response, "content") else str(response)
-    refs = "\n\n**References:**\n" + "\n".join(
-        f"- {d.metadata.get('title','N/A')} (PMID: {d.metadata.get('pmid','N/A')})"
-        for d in docs
-    )
-    return answer + refs
+
+def answer_question(question: str, history):
+    """
+    Multi-turn RAG Q&A with source attribution.
+    history is the Gradio [[user, bot], ...] list — we don't use it directly
+    because QAEngine maintains its own history; Gradio's history is for display.
+    """
+    try:
+        result = _qa_engine.ask(question)
+        return _qa_engine.format_response(result)
+    except Exception as exc:
+        return f"Error: {exc}"
+
+
+def reset_qa_history():
+    _qa_engine.reset()
+    return [], ""
 
 
 # ── Tab 4: Upload PDFs ────────────────────────────────────────────────────────
@@ -326,9 +323,48 @@ with gr.Blocks(title="FluBroad-Voice") as demo:
 
         # ── Tab 3: RAG Q&A ────────────────────────────────────────────────────
         with gr.TabItem("RAG Q&A"):
-            gr.ChatInterface(
-                fn=answer_question,
-                title="Ask questions about the literature",
+            gr.Markdown(
+                "Ask multi-turn questions about the loaded literature corpus. "
+                "Follow-up questions maintain conversation context. "
+                "Each answer includes numbered citations to source documents."
+            )
+            qa_chatbot = gr.Chatbot(
+                label="BioVoice Q&A",
+                height=500,
+                show_copy_button=True,
+                bubble_full_width=False,
+            )
+            with gr.Row():
+                qa_input = gr.Textbox(
+                    placeholder="Ask a question about the literature...",
+                    label="",
+                    scale=8,
+                    container=False,
+                )
+                qa_submit = gr.Button("Ask", variant="primary", scale=1)
+                qa_reset  = gr.Button("Reset conversation", scale=1)
+
+            def _chat_submit(question, chat_history):
+                if not question.strip():
+                    return chat_history, ""
+                answer = answer_question(question, chat_history)
+                chat_history = chat_history + [[question, answer]]
+                return chat_history, ""
+
+            qa_submit.click(
+                fn=_chat_submit,
+                inputs=[qa_input, qa_chatbot],
+                outputs=[qa_chatbot, qa_input],
+            )
+            qa_input.submit(
+                fn=_chat_submit,
+                inputs=[qa_input, qa_chatbot],
+                outputs=[qa_chatbot, qa_input],
+            )
+            qa_reset.click(
+                fn=reset_qa_history,
+                inputs=[],
+                outputs=[qa_chatbot, qa_input],
             )
 
         # ── Tab 4: Upload PDFs ────────────────────────────────────────────────
