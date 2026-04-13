@@ -128,5 +128,11 @@ class BioVoiceSettings(BaseSettings):
                     "antigen_keyword":  "influenza",
                     "include_covabdab": "false",
                 },
+                "airr": {
+                    "enabled":         False,   # opt-in: requires private data
+                    "data_path":       "",       # set to your .tsv / directory
+                    "productive_only": True,
+                    "min_v_identity":  0.80,
+                },
             },
         }
