@@ -20,6 +20,7 @@ from biovoice.core.task import Task, TaskStatus
 
 # Re-use production-grade RAG and output modules from FluBroad-Voice
 from core.presentation.ppt_generator import PPTGenerator
+from core.knowledge_graph import BioVoiceGraph
 from domain.virology.schemas.antibody_schema import antibody_schema
 
 from biovoice.models.base import ModelClient, build_model_client
@@ -297,6 +298,11 @@ class BioVoiceOrchestrator:
             # 5. Extract antibodies ───────────────────────────────────────────
             antibodies = self._extract_antibodies(review)
 
+            # 5.5 Build knowledge graph ───────────────────────────────────────
+            graph = BioVoiceGraph()
+            graph.build_from_corpus(all_articles)
+            graph.build_from_antibodies(antibodies)
+
             # 6. Build outputs ────────────────────────────────────────────────
             task.set_status(TaskStatus.OUTPUT)
             outputs: Dict = {"review": review, "antibodies": antibodies}
@@ -325,10 +331,30 @@ class BioVoiceOrchestrator:
                     output_path=word_path,
                 )
 
+            # Export knowledge graph
+            output_dir = self.config.get("output_dir", "./output")
+            os.makedirs(output_dir, exist_ok=True)
+            graph_stats = graph.statistics()
+            print(
+                f"[Graph] {graph_stats['nodes']} nodes, "
+                f"{graph_stats['edges']} edges"
+            )
+            graph_graphml = os.path.join(output_dir, "knowledge_graph.graphml")
+            graph_json    = os.path.join(output_dir, "knowledge_graph.json")
+            try:
+                graph.to_graphml(graph_graphml)
+                graph.to_json(graph_json)
+                outputs["graph_graphml"] = graph_graphml
+                outputs["graph_json"]    = graph_json
+                outputs["graph_stats"]   = graph_stats
+            except Exception as e:
+                print(f"[Graph] Export failed: {e}")
+
             if "ppt" in output_types:
                 outputs["ppt_file"] = self._build_ppt(
                     review, antibodies, all_articles, query,
                     review_sections=review_sections,
+                    graph=graph,
                 )
 
             if "video" in output_types and outputs.get("ppt_file"):
@@ -581,6 +607,7 @@ class BioVoiceOrchestrator:
         articles:        List[Dict],
         query:           str,
         review_sections: Optional[Dict] = None,
+        graph:           Optional["BioVoiceGraph"] = None,
     ) -> str:
         from core.presentation.ppt_generator import PPTGenerator
 
@@ -693,6 +720,44 @@ class BioVoiceOrchestrator:
                 )
         except Exception as e:
             print(f"[PPT] Trend chart skipped: {e}")
+
+        # Knowledge graph summary slide
+        if graph is not None:
+            try:
+                stats = graph.statistics()
+                top_epitopes = graph.query_top_targeted_epitopes(n=5)
+                bullets = [
+                    f"Nodes: {stats['nodes']}  |  Edges: {stats['edges']}",
+                    f"Antibody nodes: {stats.get('antibody_nodes', 0)}",
+                    f"Virus/subtype nodes: {stats.get('virus_nodes', 0)}",
+                    f"Publication nodes: {stats.get('publication_nodes', 0)}",
+                ]
+                if top_epitopes:
+                    bullets.append(
+                        "Top epitopes: "
+                        + ", ".join(
+                            f"{e['epitope']} ({e['antibody_count']})"
+                            for e in top_epitopes[:3]
+                        )
+                    )
+                gen.add_content_slide(
+                    "Knowledge Graph",
+                    bullets,
+                    subtitle="Antibody-antigen-publication network",
+                )
+                # Subgraph visualisation (if networkx + matplotlib available)
+                img_bytes = graph.plot_subgraph(max_nodes=40)  # entity_name=None → top ab
+                if img_bytes:
+                    gen.add_chart_slide(
+                        "Knowledge Graph — Top Antibody Network",
+                        img_bytes,
+                        caption=(
+                            f"{stats['nodes']} nodes, {stats['edges']} edges. "
+                            "Exported to knowledge_graph.graphml"
+                        ),
+                    )
+            except Exception as e:
+                print(f"[PPT] Knowledge graph slide skipped: {e}")
 
         # Antibody table slide
         if antibodies:
