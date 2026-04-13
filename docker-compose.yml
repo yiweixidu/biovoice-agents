@@ -1,0 +1,127 @@
+version: "3.9"
+
+# ── BioVoice-Agents — one-command lab deployment ─────────────────────────────
+#
+#   Quick start (Gradio web UI):
+#     cp .env.example .env         # add your OPENAI_API_KEY
+#     docker compose up            # starts web UI on http://localhost:7860
+#
+#   Local LLM (no API key needed):
+#     OLLAMA_MODEL=llama3.1:8b docker compose --profile ollama up
+#     Then in the UI set LLM to: ollama/llama3.1:8b
+#
+#   CLI only:
+#     docker compose run --rm biovoice biovoice run --llm openai/gpt-4o-mini "your query"
+#
+#   Stop everything:
+#     docker compose down -v
+
+services:
+
+  # ── Main BioVoice service ───────────────────────────────────────────────────
+  biovoice:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: biovoice-agents:latest
+    container_name: biovoice
+    restart: unless-stopped
+    ports:
+      - "7860:7860"   # Gradio web UI
+      - "8000:8000"   # FastAPI REST (if running API server)
+    environment:
+      # LLM — set OPENAI_API_KEY or point at local Ollama
+      OPENAI_API_KEY:     ${OPENAI_API_KEY:-}
+      LLM_TYPE:           ${LLM_TYPE:-openai}
+      LLM_MODEL:          ${LLM_MODEL:-gpt-4o-mini}
+      EMBED_MODEL:        ${EMBED_MODEL:-text-embedding-3-small}
+      LLM_TEMPERATURE:    ${LLM_TEMPERATURE:-0.1}
+
+      # Data sources
+      PUBMED_API_KEY:     ${PUBMED_API_KEY:-}
+      EMAIL:              ${EMAIL:-biovoice@example.com}
+
+      # Storage
+      COLLECTION_NAME:    ${COLLECTION_NAME:-biovoice}
+      PERSIST_DIR:        /app/data/vector_db
+      CACHE_FILE:         /app/data/cache/articles.json
+      OUTPUT_DIR:         /app/output
+      PPT_TEMPLATE:       /app/templates/lab_template.pptx
+
+      # Ollama (when using --profile ollama)
+      OLLAMA_BASE_URL:    ${OLLAMA_BASE_URL:-http://ollama:11434}
+
+    volumes:
+      - biovoice_data:/app/data
+      - biovoice_output:/app/output
+      - ./templates:/app/templates:ro   # mount local PPT templates
+
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import biovoice"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+
+    depends_on:
+      chromadb:
+        condition: service_healthy
+
+  # ── ChromaDB vector store ───────────────────────────────────────────────────
+  # Runs ChromaDB as a separate HTTP server so the vector index survives
+  # container restarts and can be queried independently.
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: biovoice-chromadb
+    restart: unless-stopped
+    ports:
+      - "8001:8000"
+    environment:
+      CHROMA_SERVER_AUTH_CREDENTIALS_PROVIDER: ""
+      CHROMA_SERVER_AUTH_PROVIDER: ""
+      PERSIST_DIRECTORY: /chroma/data
+    volumes:
+      - chromadb_data:/chroma/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/heartbeat"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  # ── Ollama local LLM (optional — use: docker compose --profile ollama up) ──
+  ollama:
+    image: ollama/ollama:latest
+    container_name: biovoice-ollama
+    profiles: ["ollama"]
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_models:/root/.ollama
+    environment:
+      OLLAMA_KEEP_ALIVE: "24h"
+    # Pull default model on startup
+    entrypoint: >
+      sh -c "ollama serve &
+             sleep 5 &&
+             ollama pull ${OLLAMA_MODEL:-llama3.1:8b} &&
+             wait"
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+
+volumes:
+  biovoice_data:
+    driver: local
+  biovoice_output:
+    driver: local
+  chromadb_data:
+    driver: local
+  ollama_models:
+    driver: local

@@ -1,0 +1,54 @@
+# .dockerignore — keep the build context lean
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+
+# Virtual envs
+.venv/
+venv/
+env/
+
+# Data directories (mounted as volumes at runtime)
+data/
+output/
+*.json
+
+# Dev + CI
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+htmlcov/
+.coverage
+*.log
+
+# Git
+.git/
+.gitignore
+
+# Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Secrets
+.env
+*.pem
+*.key
+
+# Large assets
+*.pptx
+*.pdf
+*.mp4
+*.mp3
+*.png
+*.jpg
