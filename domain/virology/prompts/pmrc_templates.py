@@ -27,10 +27,14 @@ on the following research question:
 
   {research_question}
 
-Use ONLY the literature provided below. For every factual claim, append a
-[CITE:PMID] marker using the exact PMID shown in the source entry. Do not
-combine multiple PMIDs into one marker — use separate markers per claim.
-Do not cite a paper for a claim it does not support.
+CITATION RULES (strictly enforced):
+- After every factual claim, append a citation marker in this EXACT format:
+  [CITE:12345678]  ← replace 12345678 with the real PMID from the literature below
+- The PMID must come from the "--- LITERATURE ---" section below (format: [PMID:XXXXXXXX]).
+- Do NOT write [CITE:PMID] literally. You must replace PMID with the actual number.
+- Do NOT invent PMIDs not present in the literature below.
+- Do NOT combine multiple PMIDs into one marker. Use separate markers per claim.
+- Do NOT cite a paper for a claim its abstract does not support.
 
 {section_instruction}
 
