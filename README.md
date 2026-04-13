@@ -1,6 +1,14 @@
-# BioVoice-Agents
+# BioVoice — Virology Skill for FluBroad
 
-Multi-agent biomedical research assistant. Give it a research question; it fetches from 15 databases, synthesizes a literature review, and produces a Word document, presentation slides, and a narrated video — all in one command.
+> **BioVoice** is the official virology Skill package for the [FluBroad Agent Framework](https://github.com/yiweixidu/flubroad).
+> It brings influenza bnAb research, universal vaccine literature, and structural immunology
+> into the FluBroad pipeline with zero framework code.
+
+[![License: CC BY-NC 4.0](https://img.shields.io/badge/License-CC%20BY--NC%204.0-lightgrey.svg)](LICENSE)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://python.org)
+[![FluBroad Skill](https://img.shields.io/badge/flubroad--skill-virology-teal)](https://github.com/yiweixidu/flubroad)
+
+Multi-agent biomedical research assistant. Give it a research question; it fetches from 17 databases, synthesizes a literature review, and produces a Word document, presentation slides, and a narrated video — all in one command.
 
 ```bash
 biovoice run "broadly neutralizing antibodies influenza hemagglutinin"
@@ -215,6 +223,40 @@ pytest -m integration       # requires NCBI API access
 
 ---
 
+## FluBroad Skill ecosystem
+
+BioVoice is a **Skill package** in the [FluBroad Agent Framework](https://github.com/yiweixidu/flubroad). The framework provides the infrastructure (RAG, orchestration, PPT, knowledge graph, Q&A, fine-tuning). BioVoice provides the domain expertise:
+
+```python
+# biovoice/skill.py — the SkillManifest
+from biovoice.skill import manifest
+
+print(manifest.summary())
+# Skill(virology v1.0.0) | 17 agents | 6 sections
+
+print(manifest.default_agents)
+# ['pubmed', 'europe_pmc', 'semantic_scholar', 'iedb', 'uniprot', 'pdb', 'flunet', 'maad']
+```
+
+Once the `flubroad` framework package is published, usage becomes:
+
+```python
+from flubroad.skill import SkillLoader
+from flubroad.core.orchestrator import FluBroadOrchestrator
+
+skill = SkillLoader.load("virology")   # finds this package via entry points
+orch  = FluBroadOrchestrator(config, skill=skill)
+```
+
+The Skill manifest (`biovoice/skill.py`) contains all domain knowledge — section queries, synthesis instructions, antibody extraction schema, knowledge graph patterns, grant templates — in one place. No virology logic lives in the framework.
+
+Other planned Skills: `flubroad-skill-oncology`, `flubroad-skill-immunology`. See the [FluBroad Skill Specification](https://github.com/yiweixidu/flubroad/blob/main/docs/skill-spec.md) to build your own.
+
+---
+
 ## License
 
-MIT
+**CC BY-NC 4.0** — free for academic and non-commercial use. Commercial use requires a license.
+See [LICENSE](LICENSE) for details.
+
+The FluBroad core framework ([github.com/yiweixidu/flubroad](https://github.com/yiweixidu/flubroad)) is MIT licensed.
