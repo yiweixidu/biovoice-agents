@@ -150,18 +150,20 @@ def verify_citations(
             continue
 
         # Jaccard check: find sentences in synthesis that cite this PMID,
-        # compare against the paper abstract.
+        # compare against title + abstract (titles carry antibody names and
+        # epitope vocabulary that claims share with their sources).
+        title    = pmid_to_paper[pmid].get("title") or ""
         abstract = pmid_to_paper[pmid].get("abstract") or ""
-        abstract_tokens = _token_set(abstract, stoplist)
+        source_tokens = _token_set(title + " " + abstract, stoplist)
 
         sentences = re.split(r'(?<=[.!?])\s+', synthesis_text)
         for sentence in sentences:
             if f"[CITE:{pmid}]" in sentence:
                 claim_tokens = _token_set(sentence, stoplist)
-                score = _jaccard(claim_tokens, abstract_tokens)
+                score = _jaccard(claim_tokens, source_tokens)
                 if score < jaccard_threshold:
                     warnings_list.append(
-                        f"[{n}] PMID {pmid}: claim may not match abstract "
+                        f"[{n}] PMID {pmid}: claim may not match source "
                         f"(Jaccard={score:.2f} < {jaccard_threshold}). "
                         f"Review: \"{sentence[:120].strip()}...\""
                     )

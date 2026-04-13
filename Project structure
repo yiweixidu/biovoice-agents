@@ -1,0 +1,68 @@
+biovoice-agents/
+├── pyproject.toml
+├── .env.example
+├── requirements.txt
+├── README.md
+│
+├── biovoice/
+│   ├── __init__.py
+│   │
+│   ├── agents/                        # Data source agents
+│   │   ├── __init__.py
+│   │   ├── base.py                    # BaseAgent ABC + FetchResult
+│   │   ├── registry.py                # Plugin registry
+│   │   ├── pubmed_agent.py            # PubMed (full-text enrichment)
+│   │   ├── europe_pmc_agent.py        # Europe PMC
+│   │   ├── pdb_agent.py               # RCSB PDB
+│   │   ├── uniprot_agent.py           # UniProt
+│   │   ├── clinicaltrials_agent.py    # ClinicalTrials.gov
+│   │   ├── chembl_agent.py            # ChEMBL
+│   │   └── local_data_agent.py        # User-uploaded files
+│   │
+│   ├── models/                        # Model abstraction layer
+│   │   ├── __init__.py
+│   │   ├── base.py                    # ModelClient ABC
+│   │   ├── openai_client.py           # OpenAI LLM + embeddings
+│   │   └── ollama_client.py           # Local Ollama
+│   │
+│   ├── core/                          # Orchestration + RAG
+│   │   ├── __init__.py
+│   │   ├── orchestrator.py            # Main orchestrator
+│   │   ├── rag.py                     # RAG engine (wraps FluBroadRAG)
+│   │   ├── generator.py               # Section-based review generator
+│   │   └── task.py                    # Task state machine
+│   │
+│   ├── output/                        # Delivery modules
+│   │   ├── __init__.py
+│   │   ├── ppt.py                     # PPT generator
+│   │   ├── video.py                   # TTS + video synthesis
+│   │   └── visualizer.py              # Heatmaps, charts
+│   │
+│   ├── config/                        # Config management
+│   │   ├── __init__.py
+│   │   ├── settings.py                # Pydantic settings
+│   │   └── prompt_registry.py         # Prompt template store
+│   │
+│   ├── cli/                           # Click CLI
+│   │   ├── __init__.py
+│   │   └── main.py
+│   │
+│   ├── ui/                            # Gradio Web UI
+│   │   ├── __init__.py
+│   │   └── app.py
+│   │
+│   └── bots/                          # Messaging bot gateway
+│       ├── __init__.py
+│       └── gateway.py
+│
+├── domain/                            # Domain-specific assets (from FluBroad-Voice)
+│   └── virology/
+│       ├── prompts/
+│       │   └── pmrc_templates.py
+│       └── schemas/
+│           └── antibody_schema.py
+│
+└── data/                              # Runtime data (git-ignored)
+    ├── vector_db/
+    ├── cache/
+    └── checkpoints/

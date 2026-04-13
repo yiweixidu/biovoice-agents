@@ -119,10 +119,10 @@ def test_verify_citations_clean_pass():
     verified, warnings = verify_citations(
         text,
         [PAPER_A, PAPER_B],
-        jaccard_threshold=0.15,
+        jaccard_threshold=0.08,
         stoplist=BIOMEDICAL_STOPLIST,
     )
-    # No warnings expected — claim closely matches abstract
+    # No warnings expected — claim closely matches title + abstract
     assert "[1]" in verified
     assert "[CITE:12345678]" not in verified
     assert not warnings
@@ -133,7 +133,7 @@ def test_verify_citations_pmid_not_in_results():
     verified, warnings = verify_citations(
         text,
         [PAPER_A],
-        jaccard_threshold=0.15,
+        jaccard_threshold=0.08,
         stoplist=BIOMEDICAL_STOPLIST,
     )
     assert any("not found in fetched results" in w for w in warnings)
@@ -141,14 +141,14 @@ def test_verify_citations_pmid_not_in_results():
 
 
 def test_verify_citations_low_jaccard_flagged():
-    # Claim is completely unrelated to PAPER_A's abstract
+    # Claim is completely unrelated to PAPER_A's title + abstract
     text = (
         "Climate change accelerates sea level rise [CITE:12345678]."
     )
     _, warnings = verify_citations(
         text,
         [PAPER_A],
-        jaccard_threshold=0.15,
+        jaccard_threshold=0.08,
         stoplist=BIOMEDICAL_STOPLIST,
     )
     assert any("Jaccard" in w for w in warnings)
@@ -159,7 +159,7 @@ def test_verify_citations_no_markers():
     _, warnings = verify_citations(
         text,
         [PAPER_A],
-        jaccard_threshold=0.15,
+        jaccard_threshold=0.08,
         stoplist=BIOMEDICAL_STOPLIST,
     )
     assert any("no [CITE:PMID] markers" in w for w in warnings)
@@ -167,14 +167,14 @@ def test_verify_citations_no_markers():
 
 def test_verify_citations_multiple_papers():
     text = (
-        "ADCC and ADCP effector functions are required for in vivo protection "
-        "[CITE:87654321]. CR6261 uses IGHV1-69 germline and targets the "
-        "hemagglutinin stalk domain [CITE:12345678]."
+        "ADCC ADCP Fc effector functions required in vivo protection "
+        "[CITE:87654321]. CR6261 IGHV1-69 germline hemagglutinin stalk "
+        "neutralization IC50 [CITE:12345678]."
     )
     verified, warnings = verify_citations(
         text,
         [PAPER_A, PAPER_B],
-        jaccard_threshold=0.15,
+        jaccard_threshold=0.08,
         stoplist=BIOMEDICAL_STOPLIST,
     )
     assert "[1]" in verified

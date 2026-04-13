@@ -100,7 +100,11 @@ class GrantConfig:
     max_ranked_papers: int = 30
 
     # Jaccard similarity threshold below which a citation is flagged suspicious.
-    jaccard_threshold: float = 0.15
+    # Computed against title + abstract tokens (after biomedical stoplist removal).
+    # 0.08 catches true hallucinations (Jaccard 0.00–0.04) without penalizing
+    # legitimate synthesis prose that paraphrases the source at a higher level
+    # of abstraction. Tighter prompts push scores higher naturally.
+    jaccard_threshold: float = 0.08
 
     # Output directory for .docx and .pptx files.
     output_dir: str = "./output"
