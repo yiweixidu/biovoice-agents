@@ -334,10 +334,11 @@ class PPTGenerator:
         _add_slide_number(slide, self._slide_num)
         return slide
 
-    def add_neutralization_heatmap(self, data: Dict[str, List[float]],
-                                   title: str = "Neutralization Breadth"):
-        from .visualizer import create_neutralization_heatmap
-        img_bytes = create_neutralization_heatmap(data, title)
+    def add_chart_slide(self, title: str, img_bytes, caption: str = ""):
+        """
+        Embed any matplotlib chart (as BytesIO PNG) into a slide.
+        The chart fills the content area below the navy header band.
+        """
         slide = self._blank()
         _add_rect(slide, 0, 0, W, H, WHITE)
         self._accent_bar(slide)
@@ -346,10 +347,26 @@ class PPTGenerator:
         _add_text(slide, title,
                   Inches(0.55), Inches(0.15), Inches(11.8), Inches(0.95),
                   size=Pt(26), bold=True, color=WHITE)
-        slide.shapes.add_picture(img_bytes, Inches(0.8), band_h + Inches(0.1),
-                                 height=Inches(5.8))
+        # Centre the chart image in the remaining content area
+        content_top  = band_h + Inches(0.1)
+        content_h    = H - content_top - Inches(0.5)
+        slide.shapes.add_picture(img_bytes,
+                                 Inches(0.6), content_top,
+                                 height=content_h)
+        if caption:
+            _add_text(slide, caption,
+                      Inches(0.65), H - Inches(0.45), Inches(12), Inches(0.38),
+                      size=Pt(9), color=SUBTEXT, italic=True)
+        _add_rect(slide, 0, H - Inches(0.35), W, Inches(0.35), LGRAY)
         _add_slide_number(slide, self._slide_num)
         return slide
+
+    def add_neutralization_heatmap(self, data: Dict[str, List[float]],
+                                   title: str = "Neutralization Breadth",
+                                   strain_labels: Optional[List[str]] = None):
+        from .visualizer import create_neutralization_heatmap
+        img_bytes = create_neutralization_heatmap(data, title, strain_labels)
+        return self.add_chart_slide(title, img_bytes)
 
     def save(self, path: str):
         os.makedirs(os.path.dirname(path) if os.path.dirname(path) else ".", exist_ok=True)

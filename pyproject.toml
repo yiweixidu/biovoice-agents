@@ -63,6 +63,7 @@ opentargets      = "biovoice.agents.opentargets_agent:OpenTargetsAgent"
 crossref         = "biovoice.agents.crossref_agent:CrossrefAgent"
 flunet           = "biovoice.agents.flunet_agent:FluNetAgent"
 pubchem          = "biovoice.agents.pubchem_agent:PubChemAgent"
+maad             = "biovoice.agents.maad_agent:MAADAgent"
 
 # ── Package discovery ─────────────────────────────────────────────────────────
 # Both the new biovoice.* tree and the inherited core.* / domain.* / app.*

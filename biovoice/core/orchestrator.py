@@ -594,16 +594,59 @@ class BioVoiceOrchestrator:
         )
 
         # Slide 2 — Corpus overview
+        source_counts = {}
+        for a in articles:
+            src = a.get("_agent_source") or a.get("source", "unknown")
+            source_counts[src] = source_counts.get(src, 0) + 1
         gen.add_content_slide(
             "Literature Corpus",
             [
                 f"Articles indexed: {len(articles)}",
                 f"Full-text available: {ft}",
                 f"Abstract only: {len(articles) - ft}",
-                f"Databases: PubMed, Europe PMC, UniProt",
-            ],
+            ] + [f"{src}: {n}" for src, n in
+                 sorted(source_counts.items(), key=lambda x: -x[1])[:5]],
             subtitle="Source breakdown",
         )
+
+        # Slide 3 — Strain surveillance chart (from FluNet agent if present)
+        try:
+            from core.presentation.visualizer import create_strain_bar_chart
+            flunet_items = [a for a in articles
+                            if a.get("_agent_source") == "flunet"
+                            or a.get("source") == "flunet"]
+            if flunet_items:
+                # Aggregate subtype counts across all FluNet records
+                from collections import defaultdict
+                subtypes: dict = defaultdict(int)
+                key_map = {
+                    "H1N1pdm09": ["ah1n1_2009"],
+                    "H3N2":      ["ah3"],
+                    "H5":        ["ah5"],
+                    "B/Victoria":["b_victoria"],
+                    "B/Yamagata":["b_yamagata"],
+                }
+                for item in flunet_items:
+                    for label, keys in key_map.items():
+                        for k in keys:
+                            try:
+                                subtypes[label] += int(item.get(k) or 0)
+                            except (ValueError, TypeError):
+                                pass
+                nonempty = {k: v for k, v in subtypes.items() if v > 0}
+                if nonempty:
+                    img = create_strain_bar_chart(
+                        nonempty,
+                        title="Influenza Strain Distribution",
+                        subtitle="WHO FluNet global surveillance",
+                    )
+                    gen.add_chart_slide(
+                        "Circulating Strain Landscape",
+                        img,
+                        caption="Source: WHO FluNet — aggregated strain surveillance data",
+                    )
+        except Exception as e:
+            print(f"[PPT] Strain chart skipped: {e}")
 
         # Slides 3–8 — one prose slide per review section
         section_order = ["problem", "motivation", "results",
@@ -627,6 +670,29 @@ class BioVoiceOrchestrator:
             for idx, chunk in enumerate(chunks[:2]):
                 slide_title = title if idx == 0 else f"{title} (cont.)"
                 gen.add_prose_slide(slide_title, chunk)
+
+        # Publication trend chart
+        try:
+            from core.presentation.visualizer import create_publication_trend
+            from collections import defaultdict
+            year_counts: dict = defaultdict(int)
+            for a in articles:
+                yr = str(a.get("year", "")).strip()
+                if yr.isdigit() and 1990 <= int(yr) <= 2030:
+                    year_counts[int(yr)] += 1
+            if len(year_counts) >= 3:
+                img = create_publication_trend(
+                    dict(year_counts),
+                    title="Publication Volume by Year",
+                    highlight_years=[2009, 2020],  # H1N1 pandemic, COVID
+                )
+                gen.add_chart_slide(
+                    "Research Momentum",
+                    img,
+                    caption="Publications per year across indexed databases",
+                )
+        except Exception as e:
+            print(f"[PPT] Trend chart skipped: {e}")
 
         # Antibody table slide
         if antibodies:

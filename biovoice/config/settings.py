@@ -122,5 +122,11 @@ class BioVoiceSettings(BaseSettings):
                     "delay":    0.5,
                     "max_cids": 100,
                 },
+                "maad": {
+                    "enabled":          True,
+                    "delay":            1.0,
+                    "antigen_keyword":  "influenza",
+                    "include_covabdab": "false",
+                },
             },
         }
