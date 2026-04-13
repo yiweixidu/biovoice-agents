@@ -25,6 +25,7 @@ from core.retrieval.pdf_processor import PDFProcessor
 from core.retrieval.pmc_fulltext import UnpaywallFetcher
 from biovoice.qa.engine import QAEngine
 from biovoice.models.base import build_model_client
+from biovoice.finetuning import FeedbackStore
 
 load_dotenv()
 
@@ -405,6 +406,122 @@ with gr.Blocks(title="FluBroad-Voice") as demo:
                 fn=check_open_access,
                 inputs=[oa_input],
                 outputs=[oa_table],
+            )
+
+        # ── Tab 6: Expert Feedback & Fine-tuning ─────────────────────────────
+        with gr.TabItem("Expert Feedback"):
+            gr.Markdown(
+                "Submit expert corrections to improve BioVoice's synthesis quality. "
+                "Corrections are stored locally and can be exported to train a "
+                "custom LoRA adapter (`python scripts/finetune_lora.py`)."
+            )
+            _fb_store = FeedbackStore(feedback_dir="data/feedback")
+
+            with gr.Row():
+                fb_query = gr.Textbox(
+                    label="Research topic / query",
+                    placeholder="e.g. broadly neutralizing antibodies influenza H3N2",
+                    lines=1,
+                )
+                fb_section = gr.Dropdown(
+                    label="Section",
+                    choices=["results", "mechanisms", "challenges", "future",
+                             "problem", "motivation", "grant_sa", "other"],
+                    value="results",
+                )
+            fb_original = gr.Textbox(
+                label="Original BioVoice output (paste here)",
+                lines=8,
+                placeholder="Paste the generated text you want to correct...",
+            )
+            fb_corrected = gr.Textbox(
+                label="Expert-corrected version",
+                lines=8,
+                placeholder="Paste or type the improved version...",
+            )
+            with gr.Row():
+                fb_rating = gr.Slider(
+                    label="Quality of ORIGINAL text (1=poor, 5=excellent)",
+                    minimum=1, maximum=5, value=3, step=1,
+                )
+                fb_reason = gr.Textbox(
+                    label="Reason / notes (optional)",
+                    lines=2,
+                    scale=3,
+                )
+            fb_submit_btn = gr.Button("Submit Correction", variant="primary")
+            fb_status     = gr.Textbox(label="Status", lines=2, interactive=False)
+
+            with gr.Accordion("Export training data", open=False):
+                gr.Markdown(
+                    "Export all corrections as a ShareGPT JSONL file for LoRA "
+                    "fine-tuning. Then run:\n"
+                    "```\npython scripts/finetune_lora.py --data data/feedback/training_data.jsonl\n```"
+                )
+                with gr.Row():
+                    export_min_rating = gr.Slider(
+                        label="Minimum rating to include",
+                        minimum=1, maximum=5, value=3, step=1,
+                    )
+                    export_btn = gr.Button("Export JSONL", variant="secondary")
+                export_status = gr.Textbox(
+                    label="Export status", lines=3, interactive=False
+                )
+                export_file = gr.File(
+                    label="Download training data", interactive=False
+                )
+
+            with gr.Accordion("Feedback statistics", open=False):
+                stats_btn = gr.Button("Refresh stats")
+                stats_box = gr.JSON(label="Store statistics")
+
+            def _submit_feedback(query, section, original, corrected, rating, reason):
+                if not original.strip() or not corrected.strip():
+                    return "Please fill in both the original and corrected text."
+                rec_id = _fb_store.log_inference(
+                    query=query, original_text=original, section=section
+                )
+                _fb_store.submit_correction(
+                    record_id=rec_id,
+                    corrected_text=corrected,
+                    rating=int(rating),
+                    rating_reason=reason,
+                )
+                stats = _fb_store.stats()
+                return (
+                    f"Correction saved (ID:{rec_id}). "
+                    f"Total corrections: {stats['total_corrections']}"
+                )
+
+            def _export_feedback(min_rating):
+                out_path = "data/feedback/training_data.jsonl"
+                n = _fb_store.export_jsonl(
+                    output_path=out_path,
+                    min_rating=int(min_rating),
+                )
+                if n == 0:
+                    return f"No corrections with rating ≥ {min_rating} found.", None
+                return (
+                    f"Exported {n} examples → {out_path}\n"
+                    f"Run: python scripts/finetune_lora.py --data {out_path}",
+                    out_path,
+                )
+
+            fb_submit_btn.click(
+                fn=_submit_feedback,
+                inputs=[fb_query, fb_section, fb_original, fb_corrected,
+                        fb_rating, fb_reason],
+                outputs=[fb_status],
+            )
+            export_btn.click(
+                fn=_export_feedback,
+                inputs=[export_min_rating],
+                outputs=[export_status, export_file],
+            )
+            stats_btn.click(
+                fn=lambda: _fb_store.stats(),
+                inputs=[],
+                outputs=[stats_box],
             )
 
 if __name__ == "__main__":
