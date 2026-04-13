@@ -60,31 +60,67 @@ def list_models():
 
 
 @cli.command("run")
-@click.option("--query", "-q", required=True, help="Search query")
+@click.argument("query_arg", required=False, default=None, metavar="QUERY")
+@click.option("--query", "-q", default=None, help="Search query (alternative to positional arg)")
 @click.option(
     "--agents", "-a",
-    default="pubmed",
+    default=(
+        "pubmed,europe_pmc,uniprot,alphafold,"
+        "semantic_scholar,biorxiv,iedb,opentargets,"
+        "crossref,flunet,pubchem"
+    ),
     show_default=True,
-    help="Comma-separated agent names, e.g. pubmed,pdb,uniprot",
+    help="Comma-separated agent names",
 )
 @click.option(
     "--output", "-o",
-    default="review,ppt",
+    default="review,word,ppt,video",
     show_default=True,
-    help="Comma-separated output types: review,ppt,video",
+    help="Comma-separated output types: review,word,ppt,video",
+)
+@click.option(
+    "--max-papers", default=0, show_default=True,
+    help="Max papers per agent (0 = no limit)",
 )
 @click.option("--topic", default="flu_bnabs", show_default=True)
-def run(query: str, agents: str, output: str, topic: str):
+@click.option(
+    "--llm", default=None,
+    help=(
+        "LLM backend in provider/model format.  Examples:\n"
+        "  openai/gpt-4o-mini  (default, needs OPENAI_API_KEY)\n"
+        "  openai/gpt-4o\n"
+        "  ollama/llama3.1:8b  (local, zero cost)\n"
+        "  ollama/llama3.2:3b  (fast local)"
+    ),
+    metavar="PROVIDER/MODEL",
+)
+def run(query_arg: str, query: str, agents: str, output: str, max_papers: int, topic: str, llm: str):
+    query = query or query_arg
+    if not query:
+        raise click.UsageError("Provide a query: biovoice run \"your query\" or --query \"your query\"")
     """Run the full BioVoice pipeline for a query."""
     settings    = BioVoiceSettings()
     config      = settings.to_orchestrator_config()
+    if llm:
+        parts = llm.split("/", 1)
+        if len(parts) != 2:
+            raise click.UsageError("--llm must be in PROVIDER/MODEL format, e.g. ollama/llama3.1:8b")
+        config["llm_type"]  = parts[0]
+        config["llm_model"] = parts[1]
+    if max_papers:
+        config["max_papers_per_agent"] = max_papers
+    else:
+        config["max_papers_per_agent"] = 9999   # no meaningful cap
     orch        = BioVoiceOrchestrator(config)
     agent_list  = [a.strip() for a in agents.split(",")]
     output_list = [o.strip() for o in output.split(",")]
 
+    llm_display = llm or f"{config['llm_type']}/{config['llm_model']}"
     click.echo(f"Query   : {query}")
+    click.echo(f"LLM     : {llm_display}")
     click.echo(f"Agents  : {agent_list}")
     click.echo(f"Outputs : {output_list}")
+    click.echo(f"Limit   : {'unlimited' if not max_papers else max_papers} per agent")
     click.echo("")
 
     def progress(stage, current, total):
@@ -101,10 +137,12 @@ def run(query: str, agents: str, output: str, topic: str):
     )
     click.echo("\n=== Review ===")
     click.echo(result.get("review", "")[:1000] + "...\n")
+    if result.get("word_file"):
+        click.echo(f"Word doc  : {result['word_file']}")
     if result.get("ppt_file"):
         click.echo(f"PPT saved : {result['ppt_file']}")
     if result.get("video_file"):
-        click.echo(f"Video saved: {result['video_file']}")
+        click.echo(f"Video     : {result['video_file']}")
     ab_count = len(result.get("antibodies", []))
     click.echo(f"Antibodies extracted: {ab_count}")
 
@@ -141,10 +179,11 @@ def serve(port: int):
 
 
 @cli.command("grant")
+@click.argument("query_arg", required=False, default=None, metavar="QUERY")
 @click.option(
     "--query", "-q",
-    required=True,
-    help='Virology research question, e.g. "broadly neutralizing antibodies influenza hemagglutinin"',
+    default=None,
+    help='Virology research question (alternative to positional arg)',
 )
 @click.option(
     "--output-dir", "-o",
@@ -158,7 +197,10 @@ def serve(port: int):
     show_default=True,
     help="Max papers to synthesize after ranking (abstracts only).",
 )
-def grant(query: str, output_dir: str, max_papers: int):
+def grant(query_arg: str, query: str, output_dir: str, max_papers: int):
+    query = query or query_arg
+    if not query:
+        raise click.UsageError("Provide a query: biovoice grant \"your question\" or --query \"your question\"")
     """
     Run the Virology Grant Copilot.
 
@@ -223,3 +265,7 @@ def grant(query: str, output_dir: str, max_papers: int):
     if sa:
         click.echo(f"\n--- Specific Aims (preview) ---")
         click.echo(sa.text[:600] + ("..." if len(sa.text) > 600 else ""))
+
+
+if __name__ == "__main__":
+    cli()

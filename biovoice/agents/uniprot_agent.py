@@ -61,7 +61,7 @@ class UniProtAgent(BaseAgent):
         params = {
             "query": query,
             "format": "json",
-            "size": limit,
+            "size": min(limit, 500),   # UniProt API hard cap is 500
             "fields": "accession,gene_names,organism_name,protein_name,cc_function",
         }
         try:

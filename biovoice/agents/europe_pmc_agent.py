@@ -59,35 +59,72 @@ class EuropePMCAgent(BaseAgent):
         )
 
     def _search(self, query: str, limit: int) -> List[Dict]:
-        params = {
-            "query":      query,
-            "format":     "json",
-            "pageSize":   min(limit, 1000),
-            "resultType": "core",
-            "sort":       "CITED desc",
-        }
+        """
+        Cursor-paginated EuropePMC search.
+        Each page is 1000 items (API max). Continues until `limit` is
+        reached or no more results are available.
+        No artificial cap when limit >= 9999 (i.e. "unlimited" mode).
+        """
         import time
-        try:
-            time.sleep(self._delay)
-            resp = self._session.get(self.SEARCH_URL, params=params, timeout=15)
-            resp.raise_for_status()
-            results = []
-            for item in resp.json().get("resultList", {}).get("result", []):
+
+        PAGE = 1000
+        results: List[Dict] = []
+        cursor = "*"
+
+        while True:
+            params = {
+                "query":      query,
+                "format":     "json",
+                "pageSize":   PAGE,
+                "resultType": "core",
+                "sort":       "CITED desc",
+                "cursorMark": cursor,
+            }
+            try:
+                time.sleep(self._delay)
+                resp = self._session.get(self.SEARCH_URL, params=params, timeout=30)
+                resp.raise_for_status()
+                data = resp.json()
+            except Exception as e:
+                print(f"[EuropePMCAgent] search failed: {e}")
+                break
+
+            page_items = data.get("resultList", {}).get("result", [])
+            if not page_items:
+                break
+
+            for item in page_items:
                 results.append({
-                    "pmid":     item.get("pmid", ""),
-                    "pmcid":    item.get("pmcid", ""),
-                    "doi":      item.get("doi", ""),
-                    "title":    item.get("title", ""),
-                    "abstract": item.get("abstractText", ""),
-                    "journal":  item.get("journalTitle", ""),
-                    "year":     str(item.get("pubYear", "")),
-                    "source":   item.get("source", ""),
-                    "cited_by": item.get("citedByCount", 0),
+                    "pmid":              item.get("pmid", ""),
+                    "pmcid":             item.get("pmcid", ""),
+                    "doi":               item.get("doi", ""),
+                    "title":             item.get("title", ""),
+                    "abstract":          item.get("abstractText", ""),
+                    "journal":           item.get("journalTitle", ""),
+                    "year":              str(item.get("pubYear", "")),
+                    "citation_count":    item.get("citedByCount", 0),
+                    "source":            item.get("source", ""),
+                    "cited_by":          item.get("citedByCount", 0),
                     "fulltext_available": False,
                     "fulltext_content":   None,
                     "fulltext_source":    None,
                 })
-            return results
-        except Exception as e:
-            print(f"[EuropePMCAgent] search failed: {e}")
-            return []
+
+            next_cursor = data.get("nextCursorMark")
+            total_found = data.get("hitCount", 0)
+            fetched     = len(results)
+
+            print(f"[EuropePMC] fetched {fetched}/{total_found} "
+                  f"(limit={limit if limit < 9999 else 'unlimited'})")
+
+            # Stop if: hard limit reached, no next page, or got everything
+            if limit < 9999 and fetched >= limit:
+                break
+            if not next_cursor or next_cursor == cursor:
+                break
+            if fetched >= total_found:
+                break
+
+            cursor = next_cursor
+
+        return results[:limit] if limit < 9999 else results

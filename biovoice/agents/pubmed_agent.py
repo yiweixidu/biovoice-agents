@@ -97,6 +97,12 @@ class PubMedAgent(BaseAgent):
     def _fetch_articles(
         self, query: str, limit: int, days_back: int
     ) -> List[Dict]:
+        # Unlimited mode: use batch fetcher (no hard cap, checkpoint-resumable).
+        # Capped mode: fast path via esearch + efetch.
+        if limit >= 9999:
+            return self._pubmed.fetch_all(
+                query=query, max_results=None, days_back=days_back
+            )
         pmids = self._pubmed.search(query, max_results=limit, days_back=days_back)
         return self._pubmed.fetch_details(pmids)
 

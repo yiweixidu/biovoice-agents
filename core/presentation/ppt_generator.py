@@ -1,161 +1,404 @@
+"""
+core/presentation/ppt_generator.py
+Google-Slides-quality PPT generator built on python-pptx primitives.
+
+Design language
+  - Color palette: navy #1A3557 | teal accent #2E86AB | light gray #F5F6FA
+    text #1C1C1E | subtext #6E7B8B
+  - Fonts: Calibri (titles 32–40pt bold, body 14–18pt, captions 11pt)
+  - Title slide: full-bleed navy header band, white title, teal rule
+  - Content slides: left accent bar (4px teal), title top-left, body below
+  - Table slides: zebra rows with teal header
+  - All slides: 16:9 widescreen (13.33 x 7.5 in)
+"""
+
+from __future__ import annotations
+
+import io
 import os
+import textwrap
+from datetime import date
+from typing import TYPE_CHECKING, Dict, List, Optional
+
 from pptx import Presentation
-from pptx.util import Inches, Pt
-from pptx.enum.text import PP_ALIGN
 from pptx.dml.color import RGBColor
-from typing import TYPE_CHECKING, List, Dict, Optional
-from .visualizer import create_neutralization_heatmap
+from pptx.enum.text import PP_ALIGN
+from pptx.util import Emu, Inches, Pt
 
 if TYPE_CHECKING:
     from biovoice.core.grant_config import GrantOutput
 
+# ── Palette ───────────────────────────────────────────────────────────────────
+NAVY   = RGBColor(0x1A, 0x35, 0x57)
+TEAL   = RGBColor(0x2E, 0x86, 0xAB)
+LGRAY  = RGBColor(0xF5, 0xF6, 0xFA)
+MGRAY  = RGBColor(0xD0, 0xD3, 0xDA)
+WHITE  = RGBColor(0xFF, 0xFF, 0xFF)
+TEXT   = RGBColor(0x1C, 0x1C, 0x1E)
+SUBTEXT= RGBColor(0x6E, 0x7B, 0x8B)
+
+# ── Slide dimensions (16:9) ───────────────────────────────────────────────────
+W = Inches(13.33)
+H = Inches(7.5)
+
+
+def _rgb(color: RGBColor):
+    return color
+
+
+def _add_rect(slide, l, t, w, h, fill: RGBColor, line: Optional[RGBColor] = None):
+    shape = slide.shapes.add_shape(
+        1,  # MSO_SHAPE_TYPE.RECTANGLE
+        l, t, w, h,
+    )
+    shape.fill.solid()
+    shape.fill.fore_color.rgb = fill
+    if line:
+        shape.line.color.rgb = line
+        shape.line.width = Pt(0.75)
+    else:
+        shape.line.fill.background()
+    return shape
+
+
+def _add_text(slide, text: str, l, t, w, h,
+               size=Pt(14), bold=False, color=TEXT,
+               align=PP_ALIGN.LEFT, wrap=True, italic=False):
+    txb = slide.shapes.add_textbox(l, t, w, h)
+    tf  = txb.text_frame
+    tf.word_wrap = wrap
+    tf.auto_size = None
+    p   = tf.paragraphs[0]
+    p.alignment = align
+    run = p.add_run()
+    run.text = text
+    run.font.size  = size
+    run.font.bold  = bold
+    run.font.color.rgb = color
+    run.font.italic = italic
+    run.font.name  = "Calibri"
+    return txb
+
+
+def _add_slide_number(slide, num: int):
+    """Bottom-right page number."""
+    _add_text(
+        slide, str(num),
+        W - Inches(0.6), H - Inches(0.35),
+        Inches(0.5), Inches(0.3),
+        size=Pt(9), color=SUBTEXT, align=PP_ALIGN.RIGHT,
+    )
+
+
 class PPTGenerator:
+    """
+    Programmatic slide builder.  No template required.
+    All slides are constructed from raw shapes so the design is fully
+    controllable without a .pptx template file.
+    """
+
     def __init__(self, template_path: Optional[str] = None):
-        if template_path and os.path.exists(template_path):
-            self.prs = Presentation(template_path)
-        else:
-            self.prs = Presentation()
-            if template_path:
-                print(f"Warning: Template file '{template_path}' not found. Using default blank presentation.")
+        self.prs = Presentation()
+        self.prs.slide_width  = W
+        self.prs.slide_height = H
+        self._slide_num = 0
+
+    # ── Internal slide factory ────────────────────────────────────────────────
+
+    def _blank(self):
+        """Return a truly blank slide (blank layout, no placeholders)."""
+        layout = self.prs.slide_layouts[6]   # blank
+        slide  = self.prs.slides.add_slide(layout)
+        # Remove any leftover placeholders from the layout
+        for ph in list(slide.placeholders):
+            sp = ph._element
+            sp.getparent().remove(sp)
+        self._slide_num += 1
+        return slide
+
+    def _header_band(self, slide, height=Inches(1.25)):
+        """Full-width navy header band."""
+        _add_rect(slide, 0, 0, W, height, NAVY)
+        return height
+
+    def _teal_rule(self, slide, top, width=Inches(1.2), height=Pt(4)):
+        """Short horizontal teal rule used under section titles."""
+        _add_rect(slide, Inches(0.55), top, width, height, TEAL)
+
+    def _slide_bg(self, slide):
+        """Light gray slide background."""
+        _add_rect(slide, 0, 0, W, H, LGRAY)
+
+    def _accent_bar(self, slide):
+        """Left vertical teal accent bar for content slides."""
+        _add_rect(slide, 0, 0, Pt(5), H, TEAL)
+
+    # ── Public slide builders ─────────────────────────────────────────────────
 
     def add_title_slide(self, title: str, subtitle: str = ""):
-        slide_layout = self.prs.slide_layouts[0]  # title slide
-        slide = self.prs.slides.add_slide(slide_layout)
-        slide.shapes.title.text = title
+        slide = self._blank()
+        # Background
+        _add_rect(slide, 0, 0, W, H, WHITE)
+        # Top navy band (40% of height)
+        band_h = Inches(3.1)
+        _add_rect(slide, 0, 0, W, band_h, NAVY)
+        # Teal rule below band
+        _add_rect(slide, 0, band_h, W, Pt(5), TEAL)
+        # Title in band
+        _add_text(
+            slide, title,
+            Inches(0.6), Inches(0.55), Inches(12.0), Inches(2.2),
+            size=Pt(36), bold=True, color=WHITE, align=PP_ALIGN.LEFT,
+        )
+        # Subtitle below band
         if subtitle:
-            slide.placeholders[1].text = subtitle
+            _add_text(
+                slide, subtitle,
+                Inches(0.6), band_h + Inches(0.35), Inches(11.5), Inches(2.5),
+                size=Pt(18), color=SUBTEXT, align=PP_ALIGN.LEFT,
+            )
+        # Bottom footer strip
+        _add_rect(slide, 0, H - Inches(0.45), W, Inches(0.45), LGRAY)
+        _add_text(
+            slide, f"Generated {date.today().strftime('%B %d, %Y')}",
+            Inches(0.6), H - Inches(0.4), Inches(6), Inches(0.38),
+            size=Pt(10), color=SUBTEXT,
+        )
+        _add_slide_number(slide, self._slide_num)
+        return slide
 
-    def add_content_slide(self, title: str, bullets: List[str]):
-        slide_layout = self.prs.slide_layouts[1]  # title and content
-        slide = self.prs.slides.add_slide(slide_layout)
-        slide.shapes.title.text = title
-        content = slide.placeholders[1]
-        text_frame = content.text_frame
-        text_frame.clear()
-        for bullet in bullets:
-            p = text_frame.add_paragraph()
-            p.text = bullet
-            p.level = 0
+    def add_section_divider(self, section_name: str):
+        """Full-bleed teal section divider slide."""
+        slide = self._blank()
+        _add_rect(slide, 0, 0, W, H, TEAL)
+        _add_text(
+            slide, section_name,
+            Inches(1.0), Inches(2.8), Inches(11.0), Inches(1.8),
+            size=Pt(40), bold=True, color=WHITE, align=PP_ALIGN.CENTER,
+        )
+        _add_slide_number(slide, self._slide_num)
+        return slide
 
-    def add_table_slide(self, title: str, headers: List[str], rows: List[List[str]]):
-        slide_layout = self.prs.slide_layouts[5]  # title only
-        slide = self.prs.slides.add_slide(slide_layout)
-        slide.shapes.title.text = title
-        rows_count = len(rows)
+    def add_content_slide(self, title: str, bullets: List[str],
+                          subtitle: str = ""):
+        slide = self._blank()
+        _add_rect(slide, 0, 0, W, H, WHITE)
+        self._accent_bar(slide)
+        # Header band
+        band_h = Inches(1.3)
+        _add_rect(slide, Pt(5), 0, W - Pt(5), band_h, NAVY)
+        # Title
+        _add_text(
+            slide, title,
+            Inches(0.55), Inches(0.12), Inches(11.8), Inches(1.0),
+            size=Pt(28), bold=True, color=WHITE,
+        )
+        if subtitle:
+            _add_text(
+                slide, subtitle,
+                Inches(0.55), Inches(0.95), Inches(11.8), Inches(0.35),
+                size=Pt(12), color=RGBColor(0xB0,0xC4,0xD8),
+            )
+        # Body
+        body_top = band_h + Inches(0.25)
+        body_h   = H - body_top - Inches(0.5)
+        body_txb = slide.shapes.add_textbox(
+            Inches(0.65), body_top, Inches(12.3), body_h
+        )
+        tf = body_txb.text_frame
+        tf.word_wrap = True
+        for i, bullet in enumerate(bullets):
+            p = tf.paragraphs[0] if i == 0 else tf.add_paragraph()
+            p.alignment = PP_ALIGN.LEFT
+            p.space_before = Pt(4)
+            run = p.add_run()
+            run.text = f"\u2022  {bullet}"
+            run.font.size  = Pt(15)
+            run.font.color.rgb = TEXT
+            run.font.name  = "Calibri"
+        # Footer
+        _add_rect(slide, 0, H - Inches(0.35), W, Inches(0.35), LGRAY)
+        _add_slide_number(slide, self._slide_num)
+        return slide
+
+    def add_prose_slide(self, title: str, body: str, citation_note: str = ""):
+        """Content slide with long prose text (wraps automatically)."""
+        slide = self._blank()
+        _add_rect(slide, 0, 0, W, H, WHITE)
+        self._accent_bar(slide)
+        band_h = Inches(1.15)
+        _add_rect(slide, Pt(5), 0, W - Pt(5), band_h, NAVY)
+        _add_text(
+            slide, title,
+            Inches(0.55), Inches(0.15), Inches(11.8), Inches(0.95),
+            size=Pt(26), bold=True, color=WHITE,
+        )
+        # Wrap body text to ~130 chars per line
+        body_top = band_h + Inches(0.2)
+        footer_h = Inches(0.45) if citation_note else Inches(0.35)
+        body_h   = H - body_top - footer_h
+        body_txb = slide.shapes.add_textbox(
+            Inches(0.65), body_top, Inches(12.3), body_h,
+        )
+        tf = body_txb.text_frame
+        tf.word_wrap = True
+        p = tf.paragraphs[0]
+        run = p.add_run()
+        # Trim to what fits (~900 chars for 15pt text)
+        display = body[:920] + (" …" if len(body) > 920 else "")
+        run.text = display
+        run.font.size  = Pt(14)
+        run.font.color.rgb = TEXT
+        run.font.name  = "Calibri"
+        # Citation note
+        if citation_note:
+            _add_text(
+                slide, citation_note,
+                Inches(0.65), H - footer_h, Inches(10), Inches(0.38),
+                size=Pt(10), color=SUBTEXT, italic=True,
+            )
+        _add_rect(slide, 0, H - Inches(0.35), W, Inches(0.35), LGRAY)
+        _add_slide_number(slide, self._slide_num)
+        return slide
+
+    def add_two_column_slide(self, title: str, left_title: str, left_body: str,
+                              right_title: str, right_body: str):
+        slide = self._blank()
+        _add_rect(slide, 0, 0, W, H, WHITE)
+        self._accent_bar(slide)
+        band_h = Inches(1.15)
+        _add_rect(slide, Pt(5), 0, W - Pt(5), band_h, NAVY)
+        _add_text(slide, title,
+                  Inches(0.55), Inches(0.15), Inches(11.8), Inches(0.95),
+                  size=Pt(26), bold=True, color=WHITE)
+        # Divider
+        mid = W / 2
+        _add_rect(slide, mid - Pt(0.5), band_h + Inches(0.1),
+                  Pt(1), H - band_h - Inches(0.5), MGRAY)
+        col_w = mid - Inches(0.85)
+        for lx, lt, lb in [
+            (Inches(0.65), left_title,  left_body),
+            (mid + Inches(0.2), right_title, right_body),
+        ]:
+            _add_text(slide, lt, lx, band_h + Inches(0.2), col_w, Inches(0.4),
+                      size=Pt(14), bold=True, color=TEAL)
+            _add_text(slide, lb, lx, band_h + Inches(0.65), col_w,
+                      H - band_h - Inches(1.1),
+                      size=Pt(13), color=TEXT)
+        _add_rect(slide, 0, H - Inches(0.35), W, Inches(0.35), LGRAY)
+        _add_slide_number(slide, self._slide_num)
+        return slide
+
+    def add_table_slide(self, title: str, headers: List[str],
+                        rows: List[List[str]]):
+        slide = self._blank()
+        _add_rect(slide, 0, 0, W, H, WHITE)
+        self._accent_bar(slide)
+        band_h = Inches(1.15)
+        _add_rect(slide, Pt(5), 0, W - Pt(5), band_h, NAVY)
+        _add_text(slide, title,
+                  Inches(0.55), Inches(0.15), Inches(11.8), Inches(0.95),
+                  size=Pt(26), bold=True, color=WHITE)
+
+        rows_count = min(len(rows), 14)
         cols_count = len(headers)
-        left = Inches(1)
-        top = Inches(1.5)
-        width = Inches(8)
-        height = Inches(0.5 * (rows_count + 1))
-        table = slide.shapes.add_table(rows_count + 1, cols_count, left, top, width, height).table
-        # header row
-        for col, header in enumerate(headers):
-            table.cell(0, col).text = header
-        # data rows
-        for i, row in enumerate(rows):
-            for j, cell in enumerate(row):
-                table.cell(i+1, j).text = str(cell)
+        row_h = min(Inches(0.38), (H - band_h - Inches(0.6)) / (rows_count + 1))
+        tbl_h = row_h * (rows_count + 1)
+        table = slide.shapes.add_table(
+            rows_count + 1, cols_count,
+            Inches(0.55), band_h + Inches(0.15),
+            W - Inches(0.7), tbl_h,
+        ).table
 
-    def add_neutralization_heatmap(self, data: Dict[str, List[float]], title: str = "Neutralization Breadth"):
-        """添加热图幻灯片"""
+        def _cell_style(cell, text, bg: RGBColor, fg: RGBColor,
+                        bold=False, size=Pt(11)):
+            cell.text = text
+            cell.fill.solid()
+            cell.fill.fore_color.rgb = bg
+            for para in cell.text_frame.paragraphs:
+                for run in para.runs:
+                    run.font.size  = size
+                    run.font.bold  = bold
+                    run.font.color.rgb = fg
+                    run.font.name  = "Calibri"
+
+        for col, hdr in enumerate(headers):
+            _cell_style(table.cell(0, col), hdr, NAVY, WHITE, bold=True, size=Pt(11))
+
+        for i, row in enumerate(rows[:rows_count]):
+            bg = WHITE if i % 2 == 0 else LGRAY
+            for j, val in enumerate(row):
+                _cell_style(table.cell(i + 1, j), str(val), bg, TEXT, size=Pt(10))
+
+        _add_rect(slide, 0, H - Inches(0.35), W, Inches(0.35), LGRAY)
+        _add_slide_number(slide, self._slide_num)
+        return slide
+
+    def add_neutralization_heatmap(self, data: Dict[str, List[float]],
+                                   title: str = "Neutralization Breadth"):
+        from .visualizer import create_neutralization_heatmap
         img_bytes = create_neutralization_heatmap(data, title)
-        slide_layout = self.prs.slide_layouts[6]  # blank
-        slide = self.prs.slides.add_slide(slide_layout)
-        left = Inches(1)
-        top = Inches(1.5)
-        slide.shapes.add_picture(img_bytes, left, top, height=Inches(5))
-        # 添加标题（可选）
-        title_box = slide.shapes.add_textbox(left, Inches(0.5), Inches(8), Inches(1))
-        title_box.text = title
+        slide = self._blank()
+        _add_rect(slide, 0, 0, W, H, WHITE)
+        self._accent_bar(slide)
+        band_h = Inches(1.15)
+        _add_rect(slide, Pt(5), 0, W - Pt(5), band_h, NAVY)
+        _add_text(slide, title,
+                  Inches(0.55), Inches(0.15), Inches(11.8), Inches(0.95),
+                  size=Pt(26), bold=True, color=WHITE)
+        slide.shapes.add_picture(img_bytes, Inches(0.8), band_h + Inches(0.1),
+                                 height=Inches(5.8))
+        _add_slide_number(slide, self._slide_num)
+        return slide
 
     def save(self, path: str):
+        os.makedirs(os.path.dirname(path) if os.path.dirname(path) else ".", exist_ok=True)
         self.prs.save(path)
 
-    # ── Grant mode methods ─────────────────────────────────────────────────────
+    # ── Grant mode ────────────────────────────────────────────────────────────
 
-    def add_grant_section_slide(self, section_title: str, text: str, citation_count: int = 0):
-        """Add a slide for a single NIH grant section (Significance, Innovation, etc.)."""
-        slide_layout = self.prs.slide_layouts[1]  # title + content
-        slide = self.prs.slides.add_slide(slide_layout)
-        slide.shapes.title.text = section_title
-        content = slide.placeholders[1]
-        tf = content.text_frame
-        tf.word_wrap = True
-        tf.clear()
-        # Trim to ~800 chars so it fits on one slide
-        display = text[:800] + ("..." if len(text) > 800 else "")
-        p = tf.add_paragraph()
-        p.text = display
-        p.level = 0
-        if citation_count:
-            note_p = tf.add_paragraph()
-            note_p.text = f"({citation_count} source(s) cited)"
-            note_p.level = 1
+    def add_grant_section_slide(self, section_title: str, text: str,
+                                citation_count: int = 0):
+        note = f"{citation_count} source(s) cited" if citation_count else ""
+        self.add_prose_slide(section_title, text, note)
 
     def add_grant_key_findings_slide(self, papers):
-        """
-        Slide 5: key findings table.
-        papers: list of Citation objects (title, authors, year, pmid)
-        """
         if not papers:
             return
-        headers = ["#", "Authors", "Year", "Title (truncated)", "PMID"]
+        headers = ["#", "Authors", "Year", "Title", "PMID"]
         rows = [
             [
                 str(i + 1),
-                (c.authors or "")[:30],
+                (c.authors or "")[:28],
                 c.year or "",
-                (c.title or "")[:60],
+                (c.title or "")[:58],
                 c.pmid or "",
             ]
-            for i, c in enumerate(papers[:12])
+            for i, c in enumerate(papers[:14])
         ]
         self.add_table_slide("Key Literature", headers, rows)
 
     def add_grant_references_slide(self, citations):
-        """Slide 6: full reference list."""
-        slide_layout = self.prs.slide_layouts[1]
-        slide = self.prs.slides.add_slide(slide_layout)
-        slide.shapes.title.text = "References"
-        tf = slide.placeholders[1].text_frame
-        tf.word_wrap = True
-        tf.clear()
-        for i, c in enumerate(citations[:15], start=1):
-            p = tf.add_paragraph()
-            p.text = (
-                f"[{i}] {c.authors or 'Unknown'}. {(c.title or '')[:60]}. "
+        refs = []
+        for i, c in enumerate(citations[:18], 1):
+            refs.append(
+                f"[{i}] {(c.authors or 'Unknown')[:35]}. "
+                f"{(c.title or '')[:55]}. "
                 f"{c.journal or ''} {c.year or ''}. PMID:{c.pmid}"
             )
-            p.level = 0
-            p.font.size = Pt(10) if hasattr(p, 'font') else None
+        self.add_content_slide("References", refs)
 
 
-def render_grant_ppt(grant_output, output_path: str) -> str:
-    """
-    Render a GrantOutput into a 6-slide PPT.
+# ── Standalone render function (used by grant pipeline) ───────────────────────
 
-    Slide structure (fixed in v1):
-      1. Title slide (research question + date)
-      2. Specific Aims
-      3. Significance
-      4. Innovation
-      5. Key findings table (top cited papers)
-      6. References
-
-    Returns output_path.
-    """
-    from datetime import date
-
+def render_grant_ppt(grant_output: "GrantOutput", output_path: str) -> str:
     gen = PPTGenerator()
 
-    # Slide 1: Title
     gen.add_title_slide(
         "Virology Grant Copilot",
-        f"Research question: {grant_output.research_question[:80]}\n"
-        f"Generated: {date.today().isoformat()}",
+        grant_output.research_question[:120],
     )
 
-    # Slides 2–4: one per grant section in output order
     section_order = ["specific_aims", "significance", "innovation", "background"]
     for key in section_order:
         gs = grant_output.section(key)
@@ -163,10 +406,7 @@ def render_grant_ppt(grant_output, output_path: str) -> str:
             continue
         gen.add_grant_section_slide(gs.title, gs.text, len(gs.citations))
 
-    # Slide 5: key findings
     gen.add_grant_key_findings_slide(grant_output.all_citations)
-
-    # Slide 6: references
     gen.add_grant_references_slide(grant_output.all_citations)
 
     gen.save(output_path)

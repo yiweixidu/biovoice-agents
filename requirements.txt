@@ -6,15 +6,15 @@ langchain-text-splitters
 chromadb
 python-pptx
 edge-tts
-moviepy==1.0.3   # 指定版本以确保兼容
+moviepy==1.0.3   # pinned for stability
 python-dotenv
 pydantic
 fastapi
 uvicorn
 gradio
 openai
-pdf2image         # 用于 PPT 转图片
+pdf2image         # PPT to image conversion
 
-# 全文获取与解析
+# Full-text fetch and parsing
 langchain-huggingface
-pdfplumber>=0.10.0           # PDF 文本提取
+pdfplumber>=0.10.0           # PDF text extraction

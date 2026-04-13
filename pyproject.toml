@@ -55,6 +55,14 @@ uniprot         = "biovoice.agents.uniprot_agent:UniProtAgent"
 clinicaltrials  = "biovoice.agents.clinicaltrials_agent:ClinicalTrialsAgent"
 chembl          = "biovoice.agents.chembl_agent:ChEMBLAgent"
 local_data      = "biovoice.agents.local_data_agent:LocalDataAgent"
+alphafold        = "biovoice.agents.alphafold_agent:AlphaFoldAgent"
+semantic_scholar = "biovoice.agents.semantic_scholar_agent:SemanticScholarAgent"
+biorxiv          = "biovoice.agents.biorxiv_agent:BioRxivAgent"
+iedb             = "biovoice.agents.iedb_agent:IEDBAgent"
+opentargets      = "biovoice.agents.opentargets_agent:OpenTargetsAgent"
+crossref         = "biovoice.agents.crossref_agent:CrossrefAgent"
+flunet           = "biovoice.agents.flunet_agent:FluNetAgent"
+pubchem          = "biovoice.agents.pubchem_agent:PubChemAgent"
 
 # ── Package discovery ─────────────────────────────────────────────────────────
 # Both the new biovoice.* tree and the inherited core.* / domain.* / app.*

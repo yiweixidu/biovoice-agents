@@ -81,8 +81,46 @@ class BioVoiceSettings(BaseSettings):
                 },
                 "pdb":            {"enabled": True},
                 "uniprot":        {"enabled": True},
+                "alphafold": {
+                    "enabled": True,
+                    "email":   self.email,
+                    "delay":   0.5,
+                },
                 "clinicaltrials": {"enabled": True},
                 "chembl":         {"enabled": True},
                 "local_data":     {"enabled": True},
+                "semantic_scholar": {
+                    "enabled": True,
+                    "delay":   1.0,
+                },
+                "biorxiv": {
+                    "enabled":   True,
+                    "delay":     0.5,
+                    "servers":   "biorxiv,medrxiv",
+                    "days_back": 730,
+                },
+                "iedb": {
+                    "enabled": True,
+                    "delay":   0.5,
+                },
+                "opentargets": {
+                    "enabled": True,
+                    "delay":   0.5,
+                },
+                "crossref": {
+                    "enabled": True,
+                    "email":   self.email,
+                    "delay":   0.5,
+                },
+                "flunet": {
+                    "enabled":    True,
+                    "delay":      1.0,
+                    "weeks_back": 104,
+                },
+                "pubchem": {
+                    "enabled":  True,
+                    "delay":    0.5,
+                    "max_cids": 100,
+                },
             },
         }

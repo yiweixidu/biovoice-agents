@@ -26,7 +26,7 @@ class FluBroadRAG:
         self,
         collection_name: str,
         persist_directory: str,
-        embedding_model: str = "BAAI/bge-large-en-v1.5",
+        embedding_model: str = "BAAI/bge-small-en-v1.5",
         device: str = "cpu",
     ):
         self.persist_directory = persist_directory

@@ -292,7 +292,7 @@ class BioVoiceOrchestrator:
 
             # 4. Generate review ──────────────────────────────────────────────
             task.set_status(TaskStatus.GENERATING)
-            review = self._generate_review(fetch_results)
+            review, review_sections = self._generate_review(fetch_results)
 
             # 5. Extract antibodies ───────────────────────────────────────────
             antibodies = self._extract_antibodies(review)
@@ -301,9 +301,34 @@ class BioVoiceOrchestrator:
             task.set_status(TaskStatus.OUTPUT)
             outputs: Dict = {"review": review, "antibodies": antibodies}
 
+            if "word" in output_types:
+                import os
+                from biovoice.output.word import render_review_word_doc
+                os.makedirs(self.config.get("output_dir", "./output"), exist_ok=True)
+                word_path = os.path.join(
+                    self.config.get("output_dir", "./output"), "review.docx"
+                )
+                section_order  = list(SECTION_QUERIES.keys())
+                section_titles = {
+                    "problem":    "Problem",
+                    "motivation": "Motivation & Rationale",
+                    "results":    "Key Results & Broadly Neutralizing Antibodies",
+                    "mechanisms": "Mechanisms of Action",
+                    "challenges": "Technical Challenges",
+                    "future":     "Future Directions",
+                }
+                outputs["word_file"] = render_review_word_doc(
+                    query=query,
+                    sections=review_sections,
+                    section_order=section_order,
+                    section_titles=section_titles,
+                    output_path=word_path,
+                )
+
             if "ppt" in output_types:
                 outputs["ppt_file"] = self._build_ppt(
-                    review, antibodies, all_articles, query
+                    review, antibodies, all_articles, query,
+                    review_sections=review_sections,
                 )
 
             if "video" in output_types and outputs.get("ppt_file"):
@@ -350,8 +375,12 @@ class BioVoiceOrchestrator:
         results = await asyncio.gather(*[_one(a) for a in agents], return_exceptions=True)
         return [r for r in results if isinstance(r, FetchResult)]
 
-    def _generate_review(self, fetch_results: List[FetchResult]) -> str:
-        """Section-by-section RAG-driven review generation (standard mode)."""
+    def _generate_review(self, fetch_results: List[FetchResult]):
+        """Section-by-section RAG-driven review generation (standard mode).
+
+        Returns (review_str, sections_dict) where review_str is the full
+        markdown text and sections_dict maps section keys to prose strings.
+        """
         if self.rag is None:
             raise RuntimeError(
                 "_generate_review requires RAG. Use _generate_grant_sections for grant mode."
@@ -395,11 +424,12 @@ class BioVoiceOrchestrator:
             "challenges": "## Technical Challenges",
             "future":     "## Future Directions",
         }
-        return "\n\n---\n\n".join(
+        review_str = "\n\n---\n\n".join(
             f"{heading}\n\n{sections[key]}"
             for key, heading in order.items()
             if key in sections
         )
+        return review_str, sections
 
     def _generate_grant_sections(
         self,
@@ -546,41 +576,78 @@ class BioVoiceOrchestrator:
 
     def _build_ppt(
         self,
-        review:     str,
-        antibodies: List[Dict],
-        articles:   List[Dict],
-        query:      str,
+        review:          str,
+        antibodies:      List[Dict],
+        articles:        List[Dict],
+        query:           str,
+        review_sections: Optional[Dict] = None,
     ) -> str:
-        ft = sum(1 for a in articles if a.get("fulltext_available"))
-        self.ppt_gen.add_title_slide(
-            "BioVoice-Agents Literature Review",
-            f"Query: {query[:60]}",
+        from core.presentation.ppt_generator import PPTGenerator
+
+        gen = PPTGenerator()
+        ft  = sum(1 for a in articles if a.get("fulltext_available"))
+
+        # Slide 1 — Title
+        gen.add_title_slide(
+            "BioVoice-Agents\nLiterature Review",
+            query[:120],
         )
-        self.ppt_gen.add_content_slide("Data sources", [
-            f"Total articles indexed: {len(articles)}",
-            f"Full text available: {ft}",
-            f"Abstract only: {len(articles) - ft}",
-        ])
-        self.ppt_gen.add_content_slide("Key findings", [review[:800]])
+
+        # Slide 2 — Corpus overview
+        gen.add_content_slide(
+            "Literature Corpus",
+            [
+                f"Articles indexed: {len(articles)}",
+                f"Full-text available: {ft}",
+                f"Abstract only: {len(articles) - ft}",
+                f"Databases: PubMed, Europe PMC, UniProt",
+            ],
+            subtitle="Source breakdown",
+        )
+
+        # Slides 3–8 — one prose slide per review section
+        section_order = ["problem", "motivation", "results",
+                         "mechanisms", "challenges", "future"]
+        section_titles = {
+            "problem":    "Problem",
+            "motivation": "Motivation & Rationale",
+            "results":    "Key Results",
+            "mechanisms": "Mechanisms of Action",
+            "challenges": "Technical Challenges",
+            "future":     "Future Directions",
+        }
+        sections = review_sections or {}
+        for key in section_order:
+            text = sections.get(key, "")
+            if not text:
+                continue
+            title = section_titles.get(key, key.title())
+            # Split long section across two slides if needed
+            chunks = [text[i:i+900] for i in range(0, len(text), 900)]
+            for idx, chunk in enumerate(chunks[:2]):
+                slide_title = title if idx == 0 else f"{title} (cont.)"
+                gen.add_prose_slide(slide_title, chunk)
+
+        # Antibody table slide
         if antibodies:
-            valid = [ab for ab in antibodies if isinstance(ab, dict)][:10]
+            valid = [ab for ab in antibodies if isinstance(ab, dict)][:14]
             if valid:
-                headers = ["Name", "Target", "Epitope", "Gene", "Spectrum", "Phase"]
+                headers = ["Antibody", "Target", "Epitope", "Gene", "Breadth", "Phase"]
                 rows = [[
                     ab.get("antibody_name", ""),
                     ab.get("target_protein", ""),
-                    ab.get("epitope_region", ""),
+                    ab.get("epitope_region", "")[:30],
                     ab.get("gene_usage", ""),
-                    ab.get("neutralization_spectrum", ""),
+                    ab.get("neutralization_spectrum", "")[:30],
                     ab.get("clinical_phase", ""),
                 ] for ab in valid]
-                self.ppt_gen.add_table_slide(
-                    "Broadly Neutralizing Antibodies", headers, rows
-                )
+                gen.add_table_slide("Broadly Neutralizing Antibodies", headers, rows)
+
         output_dir = self.config.get("output_dir", "./output")
-        ppt_file = os.path.join(output_dir, "biovoice_output.pptx")
+        ppt_file   = os.path.join(output_dir, "biovoice_output.pptx")
         os.makedirs(output_dir, exist_ok=True)
-        self.ppt_gen.save(ppt_file)
+        gen.save(ppt_file)
+        print(f"[PPT] Saved: {ppt_file}")
         return ppt_file
 
     def _export_ppt_to_images(self, pptx_path: str, output_dir: str) -> List[str]:
@@ -634,7 +701,7 @@ class BioVoiceOrchestrator:
         agent_names = ["pubmed", "europe_pmc", "uniprot"]
         fetch_results = await self._fetch_all(gc.research_question, agent_names, None)
 
-        # Merge + deduplicate by PMID
+        # Merge + deduplicate by PMID; tag each item with its agent source
         seen: set = set()
         merged: List[Dict] = []
         for fr in fetch_results:
@@ -643,10 +710,11 @@ class BioVoiceOrchestrator:
                 key  = pmid or (item.get("doi") or item.get("title") or id(item))
                 if key and key not in seen:
                     seen.add(key)
+                    item = dict(item)          # don't mutate the agent's original
+                    item.setdefault("_agent_source", fr.source)
                     merged.append(item)
 
         # Rank: recency + citation count + domain relevance
-        import math
         from datetime import date
         current_year = date.today().year
         max_cites = max((int(p.get("citation_count") or 0) for p in merged), default=1) or 1
@@ -660,14 +728,26 @@ class BioVoiceOrchestrator:
             year = int(p.get("year") or p.get("pub_year") or current_year)
             recency  = max(0.0, 1.0 - (current_year - year) / 20.0)
             cites    = int(p.get("citation_count") or 0) / max_cites
-            abstract = (p.get("abstract") or "")
             paper_tokens = _token_set(
-                (p.get("title") or "") + " " + abstract, set()
+                (p.get("title") or "") + " " + (p.get("abstract") or ""), set()
             )
             relevance = _jaccard(paper_tokens, domain_vocab)
             return 0.5 * recency + 0.3 * cites + 0.2 * relevance
 
-        ranked = sorted(merged, key=rank_score, reverse=True)[:gc.max_ranked_papers]
+        # Cap UniProt entries at 3 so protein-DB records don't crowd out papers.
+        # Strategy: sort all, then walk the list filling a capped bucket.
+        MAX_UNIPROT = 3
+        all_sorted = sorted(merged, key=rank_score, reverse=True)
+        ranked: List[Dict] = []
+        uniprot_count = 0
+        for p in all_sorted:
+            if len(ranked) >= gc.max_ranked_papers:
+                break
+            if p.get("_agent_source") == "uniprot":
+                if uniprot_count >= MAX_UNIPROT:
+                    continue
+                uniprot_count += 1
+            ranked.append(p)
 
         print(
             f"[Grant] {len(merged)} papers after dedup, "
