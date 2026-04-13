@@ -53,12 +53,12 @@ Produces NIH-formatted Specific Aims + Research Strategy with Vancouver citation
 ### Install
 
 ```bash
-pip install git+https://github.com/YOUR_USERNAME/biovoice-agents.git
+pip install git+https://github.com/yiweixidu/biovoice-agents.git
 ```
 
 Or for development:
 ```bash
-git clone https://github.com/YOUR_USERNAME/biovoice-agents.git
+git clone https://github.com/yiweixidu/biovoice-agents.git
 cd biovoice-agents
 pip install -e .
 ```
